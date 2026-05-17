@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Prototype recordings (may contain personal voice data)
+prototypes/samples/
+
+# Whisper models (downloaded at runtime)
+src-tauri/models/
+
+# Tauri / Node (for later stages)
+node_modules/
+dist/
+src-tauri/target/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env*
+*.key

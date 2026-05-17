@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(pip *)",
+      "PowerShell(rustc *)",
+      "PowerShell(npm *)",
+      "PowerShell(Test-Path *)",
+      "PowerShell([Environment]::GetEnvironmentVariable\\(\"Path\", \"User\"\\) -split \";\" | Where-Object { $_ -match \"cargo\" })",
+      "PowerShell(cargo *)",
+      "PowerShell(npm create *)",
+      "PowerShell(npm install *)",
+      "PowerShell(cargo check *)",
+      "PowerShell(npx tsc --noEmit 2>&1)"
+    ]
+  }
+}
