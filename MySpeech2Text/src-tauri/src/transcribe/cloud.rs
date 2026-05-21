@@ -13,6 +13,7 @@ pub struct GroqRequest<'a> {
     pub api_key: &'a str,
     pub model: &'a str,
     pub language: Option<&'a str>,
+    pub initial_prompt: Option<&'a str>,
     pub wav_bytes: Vec<u8>,
 }
 
@@ -36,6 +37,12 @@ pub async fn transcribe(req: GroqRequest<'_>) -> Result<String> {
     if let Some(lang) = req.language {
         if lang != "auto" && !lang.is_empty() {
             form = form.text("language", lang.to_string());
+        }
+    }
+
+    if let Some(p) = req.initial_prompt {
+        if !p.is_empty() {
+            form = form.text("prompt", p.to_string());
         }
     }
 

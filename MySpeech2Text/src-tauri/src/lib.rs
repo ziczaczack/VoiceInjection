@@ -1,10 +1,12 @@
 mod audio;
+mod dictionary;
+mod history;
 mod inject;
 mod transcribe;
 
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -16,6 +18,7 @@ use tauri_plugin_global_shortcut::{
 use tauri_plugin_store::StoreExt;
 
 use crate::audio::Recorder;
+use crate::transcribe::model::{DownloadRegistry, LocalModelStatus};
 
 const TRAY_ID: &str = "main-tray";
 const STORE_FILE: &str = "settings.json";
@@ -26,18 +29,30 @@ const STORE_KEY: &str = "settings";
 struct AppSettings {
     #[serde(default)]
     groq_api_key: String,
-    #[serde(default = "default_model")]
+    #[serde(default = "default_mode")]
+    mode: String,
+    #[serde(default = "default_cloud_model")]
     cloud_model: String,
+    #[serde(default = "default_local_model")]
+    local_model: String,
     #[serde(default = "default_language")]
     language: String,
     #[serde(default = "default_hotkey")]
     hotkey: String,
     #[serde(default = "default_inject_strategy")]
     inject_strategy: String,
+    #[serde(default)]
+    dictionary: Vec<dictionary::DictRule>,
 }
 
-fn default_model() -> String {
+fn default_mode() -> String {
+    "cloud".into()
+}
+fn default_cloud_model() -> String {
     "whisper-large-v3-turbo".into()
+}
+fn default_local_model() -> String {
+    "large-v3-turbo-q5_0".into()
 }
 fn default_language() -> String {
     "auto".into()
@@ -53,10 +68,13 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             groq_api_key: String::new(),
-            cloud_model: default_model(),
+            mode: default_mode(),
+            cloud_model: default_cloud_model(),
+            local_model: default_local_model(),
             language: default_language(),
             hotkey: default_hotkey(),
             inject_strategy: default_inject_strategy(),
+            dictionary: Vec::new(),
         }
     }
 }
@@ -80,6 +98,15 @@ fn read_settings(app: &AppHandle) -> AppSettings {
 
 struct AppState {
     recorder: Arc<Recorder>,
+    downloads: Arc<DownloadRegistry>,
+    history: Arc<history::History>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryPage {
+    total: i64,
+    entries: Vec<history::Entry>,
 }
 
 #[tauri::command]
@@ -89,6 +116,72 @@ async fn test_record_3s(app: AppHandle) -> Result<String, String> {
     stop_and_transcribe(app, false)
         .await
         .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelStatus>, String> {
+    transcribe::model::list_local(&app).map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn download_model(app: AppHandle, name: String) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let registry = state.downloads.clone();
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = transcribe::model::download(app_clone, registry, name).await {
+            log::warn!("download failed: {e:#}");
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn cancel_model_download(app: AppHandle, name: String) -> bool {
+    app.state::<AppState>().downloads.cancel(&name)
+}
+
+#[tauri::command]
+fn list_history(
+    app: AppHandle,
+    query: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Result<HistoryPage, String> {
+    let state = app.state::<AppState>();
+    let limit = limit.unwrap_or(50);
+    let offset = offset.unwrap_or(0);
+    let total = state
+        .history
+        .count(query.as_deref())
+        .map_err(|e| format!("{e:#}"))?;
+    let entries = state
+        .history
+        .list(query.as_deref(), limit, offset)
+        .map_err(|e| format!("{e:#}"))?;
+    Ok(HistoryPage { total, entries })
+}
+
+#[tauri::command]
+fn delete_history_entry(app: AppHandle, id: i64) -> Result<(), String> {
+    app.state::<AppState>()
+        .history
+        .delete(id)
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn clear_history(app: AppHandle) -> Result<(), String> {
+    app.state::<AppState>()
+        .history
+        .clear()
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn delete_local_model(app: AppHandle, name: String) -> Result<(), String> {
+    transcribe::local::unload();
+    transcribe::model::delete_local(&app, &name).map_err(|e| format!("{e:#}"))
 }
 
 fn start_recording(app: &AppHandle) -> anyhow::Result<()> {
@@ -116,23 +209,64 @@ async fn stop_and_transcribe(app: AppHandle, inject_text: bool) -> anyhow::Resul
         return Ok(String::new());
     }
 
-    let wav = audio::write_wav(&audio)?;
     let settings = read_settings(&app);
     let lang_owned = settings.language.clone();
-    let lang: Option<&str> = if lang_owned == "auto" || lang_owned.is_empty() {
+    let lang_opt: Option<String> = if lang_owned == "auto" || lang_owned.is_empty() {
         None
     } else {
-        Some(lang_owned.as_str())
+        Some(lang_owned)
+    };
+
+    let prompt_opt: Option<&str> = match lang_opt.as_deref() {
+        Some("zh") => Some("以下是普通话的句子。"),
+        Some("en") => None,
+        _ => Some("以下是普通话的句子。"),
     };
 
     let _ = app.emit("status", format!("transcribing ({dur:.1}s)..."));
-    let text = transcribe::cloud::transcribe(transcribe::cloud::GroqRequest {
-        api_key: &settings.groq_api_key,
-        model: &settings.cloud_model,
-        language: lang,
-        wav_bytes: wav,
-    })
-    .await?;
+    let (raw, used_mode) = match settings.mode.as_str() {
+        "local" => (
+            run_local(&app, &settings, &audio, lang_opt.as_deref(), prompt_opt).await?,
+            "local",
+        ),
+        "auto" => {
+            match run_cloud(&app, &settings, &audio, lang_opt.as_deref(), prompt_opt).await {
+                Ok(t) => (t, "cloud"),
+                Err(e) => {
+                    log::warn!("cloud failed in auto mode, falling back to local: {e:#}");
+                    let _ = app.emit("status", "cloud failed — trying local...");
+                    (
+                        run_local(&app, &settings, &audio, lang_opt.as_deref(), prompt_opt).await?,
+                        "local",
+                    )
+                }
+            }
+        }
+        _ => (
+            run_cloud(&app, &settings, &audio, lang_opt.as_deref(), prompt_opt).await?,
+            "cloud",
+        ),
+    };
+    let normalized = fast2s::convert(&raw);
+    let text = dictionary::apply(&normalized, &settings.dictionary);
+
+    if !text.is_empty() {
+        let used_model = if used_mode == "cloud" {
+            &settings.cloud_model
+        } else {
+            &settings.local_model
+        };
+        let lang_for_db = lang_opt.as_deref();
+        if let Err(e) = app.state::<AppState>().history.insert(history::NewEntry {
+            mode: used_mode,
+            model: used_model,
+            language: lang_for_db,
+            duration_secs: dur as f64,
+            text: &text,
+        }) {
+            log::warn!("history insert failed: {e:#}");
+        }
+    }
 
     let _ = app.emit("transcription", &text);
 
@@ -157,6 +291,58 @@ async fn stop_and_transcribe(app: AppHandle, inject_text: bool) -> anyhow::Resul
 
     let _ = app.emit("status", "done");
     log::info!("transcribed ({} chars): {}", text.len(), text);
+    Ok(text)
+}
+
+async fn run_cloud(
+    _app: &AppHandle,
+    settings: &AppSettings,
+    audio: &audio::RecordedAudio,
+    language: Option<&str>,
+    initial_prompt: Option<&str>,
+) -> anyhow::Result<String> {
+    let wav = audio::write_wav(audio)?;
+    transcribe::cloud::transcribe(transcribe::cloud::GroqRequest {
+        api_key: &settings.groq_api_key,
+        model: &settings.cloud_model,
+        language,
+        initial_prompt,
+        wav_bytes: wav,
+    })
+    .await
+}
+
+async fn run_local(
+    app: &AppHandle,
+    settings: &AppSettings,
+    audio: &audio::RecordedAudio,
+    language: Option<&str>,
+    initial_prompt: Option<&str>,
+) -> anyhow::Result<String> {
+    let model_path = transcribe::model::model_path(app, &settings.local_model)?;
+    if !model_path.exists() {
+        return Err(anyhow::anyhow!(
+            "local model '{}' not downloaded — go to Settings → Local Models",
+            settings.local_model
+        ));
+    }
+    let model_name = settings.local_model.clone();
+    let samples = audio.samples.clone();
+    let sample_rate = audio.sample_rate;
+    let lang_owned = language.map(|s| s.to_string());
+    let prompt_owned = initial_prompt.map(|s| s.to_string());
+    let path_clone = model_path.clone();
+    let text = tokio::task::spawn_blocking(move || {
+        transcribe::local::transcribe(transcribe::local::LocalRequest {
+            model_name: &model_name,
+            model_path: &path_clone,
+            samples: &samples,
+            sample_rate,
+            language: lang_owned.as_deref(),
+            initial_prompt: prompt_owned.as_deref(),
+        })
+    })
+    .await??;
     Ok(text)
 }
 
@@ -203,18 +389,38 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(AppState {
-            recorder: Arc::new(Recorder::spawn()),
-        })
-        .invoke_handler(tauri::generate_handler![test_record_3s])
+        .invoke_handler(tauri::generate_handler![
+            test_record_3s,
+            list_local_models,
+            download_model,
+            cancel_model_download,
+            delete_local_model,
+            list_history,
+            delete_history_entry,
+            clear_history
+        ])
         .setup(|app| {
+            let history_db_path = app
+                .path()
+                .app_data_dir()
+                .expect("could not resolve app_data_dir")
+                .join("history.db");
+            let history_db = history::History::open(&history_db_path)
+                .expect("failed to open history db");
+
+            app.manage(AppState {
+                recorder: Arc::new(Recorder::spawn()),
+                downloads: Arc::new(DownloadRegistry::new()),
+                history: Arc::new(history_db),
+            });
+
             let toggle_record = MenuItem::with_id(
                 app, "toggle_record", "Toggle Recording", true, None::<&str>,
             )?;
             let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-            let history = MenuItem::with_id(app, "history", "History", true, None::<&str>)?;
+            let history_item = MenuItem::with_id(app, "history", "History", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&toggle_record, &settings, &history, &quit])?;
+            let menu = Menu::with_items(app, &[&toggle_record, &settings, &history_item, &quit])?;
 
             let _tray = TrayIconBuilder::with_id(TRAY_ID)
                 .icon(app.default_window_icon().unwrap().clone())

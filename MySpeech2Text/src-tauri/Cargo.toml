@@ -24,7 +24,12 @@ anyhow = "1"
 thiserror = "1"
 cpal = "0.15"
 hound = "3.5"
-reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls", "stream"] }
 log = "0.4"
 enigo = "0.2"
 arboard = "3"
+whisper-rs = { version = "0.16", features = ["cuda"] }
+futures-util = "0.3"
+fast2s = "0.3"
+regex = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }

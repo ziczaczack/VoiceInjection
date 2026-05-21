@@ -10,7 +10,11 @@
       "PowerShell(npm create *)",
       "PowerShell(npm install *)",
       "PowerShell(cargo check *)",
-      "PowerShell(npx tsc --noEmit 2>&1)"
+      "PowerShell(npx tsc --noEmit 2>&1)",
+      "Bash(curl -s \"https://crates.io/api/v1/crates/whisper-rs-sys\")",
+      "Bash(curl -s \"https://crates.io/api/v1/crates/whisper-rs\")",
+      "Bash(curl -s \"https://crates.io/api/v1/crates/whisper-rs-sys/0.15.0/dependencies\")",
+      "PowerShell(Remove-Item *)"
     ]
   }
 }

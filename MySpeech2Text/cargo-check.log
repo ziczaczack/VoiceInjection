@@ -1,0 +1,30 @@
+﻿cargo :    Compiling bincode v1.3.3
+At line:1 char:147
++ ... NGS -ErrorAction SilentlyContinue; $output = cargo check 2>&1 | 
+Out-S ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling bincode v1.3.3 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Checking ahash v0.7.8
+    Checking lazy_static v1.5.0
+   Compiling fast2s v0.3.1
+    Checking hashbrown v0.12.3
+    Checking voice-dictation v0.1.0 
+(D:\MyVoiceInjection\MySpeech2Text\src-tauri)
+warning: method `is_active` is never used
+   --> src\transcribe\model.rs:155:12
+    |
+127 | impl DownloadRegistry {
+    | --------------------- method in this implementation
+...
+155 |     pub fn is_active(&self, name: &str) -> bool {
+    |            ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by 
+default
+
+warning: `voice-dictation` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.47s
+
