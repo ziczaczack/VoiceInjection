@@ -70,8 +70,13 @@ The full end-to-end Windows path works: hold the hotkey → capture audio → tr
 dictionary → inject text into the focused app. Model download/management, transcription
 history, autostart, and the system tray are all in place.
 
-**Next:** a floating always-on-top recording widget (Stage 5) and first-run onboarding
-+ auto-updater (Stage 8). Smaller gaps: SHA256 verification of downloaded models,
-surfacing GPU/CUDA status, and history extras (stats, export, re-inject).
+**Next:** first-run onboarding + auto-updater (Stage 8). Smaller gaps: SHA256
+verification of downloaded models, surfacing GPU/CUDA status, and history extras
+(stats, export, re-inject).
+
+The Stage 5 floating widget was prototyped and dropped: as a status-only indicator
+it added no value, and making it control recording isn't viable — a WebView2 window
+steals keyboard focus when clicked, which mis-targets text injection. Recording stays
+on the global hotkey and tray.
 
 The full development guide (goals, tech rationale, milestones) is in `PROJECT.md`.
