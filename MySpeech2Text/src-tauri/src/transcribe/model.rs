@@ -160,11 +160,25 @@ impl DownloadRegistry {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum DownloadEvent<'a> {
-    Started { name: &'a str, total: Option<u64> },
-    Progress { name: &'a str, downloaded: u64, total: Option<u64> },
-    Done { name: &'a str },
-    Failed { name: &'a str, error: String },
-    Canceled { name: &'a str },
+    Started {
+        name: &'a str,
+        total: Option<u64>,
+    },
+    Progress {
+        name: &'a str,
+        downloaded: u64,
+        total: Option<u64>,
+    },
+    Done {
+        name: &'a str,
+    },
+    Failed {
+        name: &'a str,
+        error: String,
+    },
+    Canceled {
+        name: &'a str,
+    },
 }
 
 pub async fn download(app: AppHandle, registry: Arc<DownloadRegistry>, name: String) -> Result<()> {
@@ -197,13 +211,11 @@ pub async fn download(app: AppHandle, registry: Arc<DownloadRegistry>, name: Str
     result
 }
 
-async fn do_download(
-    app: &AppHandle,
-    info: &ModelInfo,
-    cancel: Arc<AtomicBool>,
-) -> Result<()> {
+async fn do_download(app: &AppHandle, info: &ModelInfo, cancel: Arc<AtomicBool>) -> Result<()> {
     let dir = models_dir(app)?;
-    fs::create_dir_all(&dir).await.context("creating models dir")?;
+    fs::create_dir_all(&dir)
+        .await
+        .context("creating models dir")?;
     let final_path = dir.join(info.filename);
     let tmp_path = dir.join(format!("{}.part", info.filename));
 

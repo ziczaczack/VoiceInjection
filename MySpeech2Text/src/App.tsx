@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { load, Store } from "@tauri-apps/plugin-store";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import {
   DEFAULT_SETTINGS,
   DictRule,
@@ -12,6 +13,7 @@ import {
   Settings,
 } from "./types";
 import "./App.css";
+
 
 const STORE_FILE = "settings.json";
 
@@ -26,6 +28,7 @@ function App() {
   const [savedAt, setSavedAt] = useState<string>("");
 
   const [isRecording, setIsRecording] = useState(false);
+  const [autostart, setAutostart] = useState(false);
   const [status, setStatus] = useState<string>("idle");
   const [lastTranscription, setLastTranscription] = useState<string>("");
   const [testing, setTesting] = useState(false);
@@ -119,6 +122,12 @@ function App() {
 
       await refreshModels();
       await refreshHistory("", 0);
+
+      try {
+        setAutostart(await isEnabled());
+      } catch (e) {
+        console.warn("autostart isEnabled failed", e);
+      }
     })();
 
     return () => {
@@ -141,6 +150,16 @@ function App() {
       await store.set("settings", next);
       await store.save();
       setSavedAt(new Date().toLocaleTimeString());
+    }
+  }
+
+  async function toggleAutostart(on: boolean) {
+    try {
+      if (on) await enable();
+      else await disable();
+      setAutostart(await isEnabled());
+    } catch (e) {
+      setStatus(`autostart error: ${String(e)}`);
     }
   }
 
@@ -364,7 +383,7 @@ function App() {
             />
           </Field>
 
-          <Field label="Injection strategy" hint="Wired in Stage 3.">
+          <Field label="Injection strategy" hint="Clipboard paste is reliable for Unicode and long text; direct keystroke avoids touching the clipboard. Long text always uses clipboard.">
             <select
               className="select"
               value={settings.injectStrategy}
@@ -373,6 +392,17 @@ function App() {
               <option value="clipboard">Clipboard + paste</option>
               <option value="keystroke">Direct keystroke</option>
             </select>
+          </Field>
+
+          <Field label="Start on login" hint="Launch Voice Dictation automatically (minimized to tray) when you sign in to Windows.">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autostart}
+                onChange={(e) => toggleAutostart(e.target.checked)}
+              />
+              <span>{autostart ? "Enabled" : "Disabled"}</span>
+            </label>
           </Field>
         </section>
 

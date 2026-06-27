@@ -198,10 +198,7 @@ fn start_stream() -> Result<ActiveStream> {
             {
                 let tx = samples_tx.clone();
                 move |data: &[u16], _: &cpal::InputCallbackInfo| {
-                    let buf: Vec<i16> = data
-                        .iter()
-                        .map(|&s| (s as i32 - 32768) as i16)
-                        .collect();
+                    let buf: Vec<i16> = data.iter().map(|&s| (s as i32 - 32768) as i16).collect();
                     let _ = tx.send(buf);
                 }
             },

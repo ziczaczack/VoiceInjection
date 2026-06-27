@@ -19,9 +19,7 @@ pub struct GroqRequest<'a> {
 
 pub async fn transcribe(req: GroqRequest<'_>) -> Result<String> {
     if req.api_key.trim().is_empty() {
-        return Err(anyhow!(
-            "no Groq API key set — paste one in Settings first"
-        ));
+        return Err(anyhow!("no Groq API key set — paste one in Settings first"));
     }
 
     let part = Part::bytes(req.wav_bytes)
@@ -69,7 +67,6 @@ pub async fn transcribe(req: GroqRequest<'_>) -> Result<String> {
         return Err(anyhow!("Groq HTTP {status}: {body}"));
     }
 
-    let parsed: TranscriptionResponse =
-        resp.json().await.context("Groq returned invalid JSON")?;
+    let parsed: TranscriptionResponse = resp.json().await.context("Groq returned invalid JSON")?;
     Ok(parsed.text.trim().to_string())
 }

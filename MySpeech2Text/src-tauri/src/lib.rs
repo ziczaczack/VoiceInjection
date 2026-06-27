@@ -229,19 +229,17 @@ async fn stop_and_transcribe(app: AppHandle, inject_text: bool) -> anyhow::Resul
             run_local(&app, &settings, &audio, lang_opt.as_deref(), prompt_opt).await?,
             "local",
         ),
-        "auto" => {
-            match run_cloud(&app, &settings, &audio, lang_opt.as_deref(), prompt_opt).await {
-                Ok(t) => (t, "cloud"),
-                Err(e) => {
-                    log::warn!("cloud failed in auto mode, falling back to local: {e:#}");
-                    let _ = app.emit("status", "cloud failed — trying local...");
-                    (
-                        run_local(&app, &settings, &audio, lang_opt.as_deref(), prompt_opt).await?,
-                        "local",
-                    )
-                }
+        "auto" => match run_cloud(&app, &settings, &audio, lang_opt.as_deref(), prompt_opt).await {
+            Ok(t) => (t, "cloud"),
+            Err(e) => {
+                log::warn!("cloud failed in auto mode, falling back to local: {e:#}");
+                let _ = app.emit("status", "cloud failed — trying local...");
+                (
+                    run_local(&app, &settings, &audio, lang_opt.as_deref(), prompt_opt).await?,
+                    "local",
+                )
             }
-        }
+        },
         _ => (
             run_cloud(&app, &settings, &audio, lang_opt.as_deref(), prompt_opt).await?,
             "cloud",
@@ -382,6 +380,20 @@ fn parse_hotkey(s: &str) -> Shortcut {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be the FIRST plugin registered. When a second launch happens, the
+        // running instance gets the new args and focuses its window; the duplicate
+        // process exits instead of spawning another tray icon.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("settings") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .args(["--minimized"])
+                .build(),
+        )
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -405,8 +417,8 @@ pub fn run() {
                 .app_data_dir()
                 .expect("could not resolve app_data_dir")
                 .join("history.db");
-            let history_db = history::History::open(&history_db_path)
-                .expect("failed to open history db");
+            let history_db =
+                history::History::open(&history_db_path).expect("failed to open history db");
 
             app.manage(AppState {
                 recorder: Arc::new(Recorder::spawn()),
@@ -414,9 +426,8 @@ pub fn run() {
                 history: Arc::new(history_db),
             });
 
-            let toggle_record = MenuItem::with_id(
-                app, "toggle_record", "Toggle Recording", true, None::<&str>,
-            )?;
+            let toggle_record =
+                MenuItem::with_id(app, "toggle_record", "Toggle Recording", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
             let history_item = MenuItem::with_id(app, "history", "History", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -472,6 +483,17 @@ pub fn run() {
                 log::error!("failed to register hotkey '{}': {e}", settings.hotkey);
             } else {
                 log::info!("registered hotkey: {}", settings.hotkey);
+            }
+
+            // The window is hidden by default (see tauri.conf.json). On a manual
+            // launch, surface the settings window so the user sees the app opened.
+            // When autostarted at login (`--minimized`), stay quietly in the tray.
+            let launched_minimized = std::env::args().any(|a| a == "--minimized");
+            if !launched_minimized {
+                if let Some(window) = app.get_webview_window("settings") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
             }
 
             Ok(())

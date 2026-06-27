@@ -63,7 +63,10 @@ mod tests {
     #[test]
     fn case_insensitive() {
         let r = vec![rule("typescript", "TypeScript", true)];
-        assert_eq!(apply("TypeScript and TYPESCRIPT", &r), "TypeScript and TypeScript");
+        assert_eq!(
+            apply("TypeScript and TYPESCRIPT", &r),
+            "TypeScript and TypeScript"
+        );
     }
 
     #[test]

@@ -4,6 +4,9 @@
   "description": "Default capabilities for all windows",
   "windows": ["settings"],
   "permissions": [
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
     "core:default",
     "core:window:allow-show",
     "core:window:allow-hide",
