@@ -351,14 +351,25 @@ fn update_tray_tooltip(app: &AppHandle, text: &str) {
 }
 
 fn handle_shortcut(app: &AppHandle, _sc: &Shortcut, event: ShortcutEvent) {
+    let recorder = app.state::<AppState>().recorder.clone();
     match event.state() {
+        // Windows repeats key-down (WM_HOTKEY auto-repeat) while the hotkey is
+        // held. Ignore repeats so we don't spam start() with "already recording".
         ShortcutState::Pressed => {
+            if recorder.is_running() {
+                return;
+            }
             if let Err(e) = start_recording(app) {
                 let _ = app.emit("status", format!("error starting: {e:#}"));
                 log::error!("start error: {e:#}");
             }
         }
+        // Ignore a Released with no active recording — e.g. the hotkey was
+        // already held down when the app started and registered it.
         ShortcutState::Released => {
+            if !recorder.is_running() {
+                return;
+            }
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = stop_and_transcribe(app_clone.clone(), true).await {
